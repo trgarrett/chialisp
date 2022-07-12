@@ -1,0 +1,26 @@
+(mod (PUZZLE_HASHES NUM_PUZZLE_HASHES MAX_FEE total_amount)
+    (include condition_codes.clib)
+
+    (defun pay_to (puzzle_hashes amount_per_send)
+        (if (l puzzle_hashes)
+        (c 
+            (list CREATE_COIN (f puzzle_hashes) amount_per_send)
+            (pay_to (r puzzle_hashes) amount_per_send)
+        )
+        ()
+        )
+    )
+
+    (defun calc_fee (max_fee total_amount)
+         ; cap the total fee at max_fee or 2%
+         (if (> total_amount (* 50 max_fee))
+            max_fee
+            (/ total_amount 50)
+         )
+    )
+
+    (c
+        (list ASSERT_MY_AMOUNT total_amount)
+        (pay_to PUZZLE_HASHES (f (divmod (- total_amount (calc_fee MAX_FEE total_amount)) NUM_PUZZLE_HASHES)))
+    )
+)
