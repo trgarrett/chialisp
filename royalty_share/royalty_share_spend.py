@@ -30,13 +30,15 @@ prefix = "xch"
 def print_json(dict):
     print(json.dumps(dict, sort_keys=True, indent=4))
 
-async def spendUnspentCoins(royalty_puzzle_hash, royalty_puzzle):  
+async def spendUnspentCoins(royalty_address, royalty_puzzle_hash, royalty_puzzle, cat_asset_id=None):  
     try:
+        if cat_asset_id:
+            print(f"\tTrying address {royalty_address} as CAT with TAIL hash {cat_asset_id}")
         node_client = await FullNodeRpcClient.create(self_hostname, uint16(full_node_rpc_port), DEFAULT_ROOT_PATH, config)
         all_royalty_coins = await node_client.get_coin_records_by_puzzle_hash(royalty_puzzle_hash, False, 2180000)
         for coin_record in all_royalty_coins:
             coin_record = await node_client.get_coin_record_by_name(coin_record.coin.name())
-            print(f"unspent coin_record:{coin_record}")        
+            print(f"unspent coin_record: \r\n{coin_record}")        
             #Spent Coin
             coin_spend = CoinSpend(
                 coin_record.coin,
@@ -63,12 +65,16 @@ def usage():
     print(f"Usage: python royalty_share_spend.py <ROYALTY_ADDRESS> <PATH_TO_CURRIED_ROYALTY_PUZZLE_AS_HEX> \r\n")
     exit(-1)
 
+def calculate_royalty_address(royalty_address, asset_id):
+    return (royalty_address, asset_id)
+
 if __name__ == "__main__":
 
     if(len(sys.argv) != 3):
         usage()
         exit(1)
 
+    royalty_address = sys.argv[1]
     royalty_puzzle_hash = decode_puzzle_hash(sys.argv[1])
     royalty_puzzle = None
     text: str = None
@@ -80,4 +86,16 @@ if __name__ == "__main__":
     sp = SerializedProgram.from_bytes(clvm_blob)
     royalty_puzzle = Program.from_bytes(bytes(sp))
 
-    asyncio.run(spendUnspentCoins(royalty_puzzle_hash, royalty_puzzle))
+    print('Checking XCH spends...')
+    asyncio.run(spendUnspentCoins(royalty_address, royalty_puzzle_hash, royalty_puzzle))
+
+    # It's highly likely you will want to support a different set of these
+    # TODO: look at API or CSV import of all/as many as you care about
+    cats = {'LKY8': '0x7efa9f202cfd8e174e1376790232f1249e71fbe46dc428f7237a47d871a2b78b'}
+
+    print('Checking CAT spends...')
+    for cat in cats:
+        asset_id = cats[cat]
+        print(cat, asset_id)
+        (royalty_address, royalty_puzzle_hash) = calculate_royalty_address(royalty_address, asset_id)
+        asyncio.run(spendUnspentCoins(royalty_address, royalty_puzzle_hash, royalty_puzzle, asset_id))
