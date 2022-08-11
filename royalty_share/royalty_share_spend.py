@@ -76,6 +76,13 @@ async def spend_unspent_coins(royalty_address, royalty_puzzle_hash, royalty_puzz
                             signature,
                         )
 
+                # TODO: coin selection and fee calculation
+                # general approach: 
+                # add fee coin(s) to coin_spend with puzzlehash=*my wallet* with amount=(coin amount - max fees) -> allow remainder to go to farmer
+                # update spend bundle aggregated signature
+                # if max_fees > 0:
+                #    spend_bundle = add_fees_to_spend_bundle(spend_bundle, max_fees)
+
                 print_json(spend_bundle.to_json_dict())
                 status = await node_client.push_tx(spend_bundle)
                 print_json(status)            

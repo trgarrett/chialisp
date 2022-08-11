@@ -1,0 +1,51 @@
+; p2_royalty_share_allocated_percentages_feeless.clsp 
+;
+; ROYALTY_ALLOCATIONS is a List of 2-element lists (e.g. Pair) where the first 
+;     element is the recipient puzzlehash and the second element is the percentage the recipient should receive, encoded as basis points
+;     (175 == 1.75%)
+;     
+;     Percentage allocations should be verified to sum to 100% outside of the Chialisp code, as the cost to validate the inputs at 
+;     runtime is prohibitive and is too late to prevent any bad cases because the puzzle will already have received funds if it is being
+;     executed on chain.
+;
+; TIP_JAR_PUZZLEHASH is a place for leftover mojos to go, distinct from fees. To maintain compatibility with both CAT and XCH spends, we're 
+;     avoiding introducing fee spends into the puzzle itself. That means that a naive spend bundle made for this coin spend will have 
+;     0 fees attached. The Python driver will be responsible for creating smarter spend bundles that inject additional fees, if 
+;     acceleration is desired (and eventually acceleration will likely be ESSENTIAL due to the fee market). You should probably avoid 
+;     having TIP_JAR_PUZZLEHASH be also defined as a puzzlehash in ROYALTY_ALLOCATIONS because you want to avoid weird corner cases where
+;     the parent coin ID, puzzle hash, and amount for a spend are non-unique. There's probably some weird integer rounding/truncation 
+;     case where that can happen. Consider setting your tip jar to the wallet of a favorite charity or developer of a favorite project!
+;
+;
+(mod (ROYALTY_ALLOCATIONS TIP_JAR_PUZZLEHASH total_amount)
+    (include condition_codes.clib)
+
+    (defun pay_to (royalty_allocations tip_jar_puzzlehash tip_amount total_amount)
+        (if (l royalty_allocations)
+        (c 
+            (list CREATE_COIN (f (f royalty_allocations)) (calc_share (f (r (f royalty_allocations))) total_amount))
+            (pay_to (r royalty_allocations) tip_jar_puzzlehash tip_amount total_amount)
+        )
+        (list (list CREATE_COIN tip_jar_puzzlehash tip_amount)))
+    )
+
+    (defun calc_share (basis_points total_amount)
+         (/ (* basis_points total_amount) 10000)
+    )
+
+    (defun sum_shares (royalty_allocations total_amount)
+        (if (l royalty_allocations)
+        (+ (calc_share (f (r (f royalty_allocations))) total_amount) (sum_shares (r royalty_allocations) total_amount))
+        ()
+        )
+    )
+
+    (defun calc_tip (royalty_allocations total_amount)
+        (- total_amount (sum_shares royalty_allocations total_amount))
+    )
+
+    (c
+        (list ASSERT_MY_AMOUNT total_amount)
+        (pay_to ROYALTY_ALLOCATIONS TIP_JAR_PUZZLEHASH (calc_tip ROYALTY_ALLOCATIONS total_amount) total_amount)
+    )
+)
