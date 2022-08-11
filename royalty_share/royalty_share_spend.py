@@ -127,7 +127,7 @@ async def calculate_cat_spend_bundle(coin_record: CoinRecord, node_client: FullN
         parent_coin.amount)
 
     spendable_cat = SpendableCAT(coin, bytes.fromhex(cat_asset_id), royalty_puzzle, Program.to([coin.amount]), Program.to([]),
-                                     lineage_proof, -1)
+                                     lineage_proof, 0)
     spend_bundle = unsigned_spend_bundle_for_spendable_cats(CAT_MOD, [spendable_cat])
 
     return spend_bundle
