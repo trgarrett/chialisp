@@ -38,11 +38,11 @@ See puzzle for more detailed argument description
    the parent coin ID, puzzle hash, and amount for a spend are non-unique. There's probably some weird integer rounding/truncation 
    case where that can happen. Consider setting your tip jar to the wallet of a favorite charity or developer of a favorite project!
 
-In this example, the parties will split 60% to deadbeef and 40% to f00f with dangling mojos donated to 0xcafebabe. The cost to execute this puzzle will scale up with 
-large numbers of addresses, so they should be avoided. The sum of all parts of basis points should be 10 0000 unless you make it less to be generous to 0xcafebabe!
+In this example, the parties will split 60% to deadbeef and 40% to f00f with dangling mojos donated to cafebabe. The cost to execute this puzzle will scale up with 
+large numbers of addresses, so they should be avoided. The sum of all parts of basis points should be 10 0000 unless you make it less to be generous to cafebabe!
 
 ```
- cdv clsp curry ./p2_royalty_share_allocated_percentages_feeless.clsp.hex -a '((0x00000000000000000000000000000000000000000000000000000000deadbeef 6000) (0x000000000000000000000000000000000000000000000000000000000000f00f 4000))' -a 0xcafebabe
+ cdv clsp curry ./p2_royalty_share_allocated_percentages_feeless.clsp.hex -a '((0x00000000000000000000000000000000000000000000000000000000deadbeef 6000) (0x000000000000000000000000000000000000000000000000000000000000f00f 4000))' -a 0x00000000000000000000000000000000000000000000000000000000cafebabe
  ```
 
 # 3. Obtain Puzzle Hash Address / Puzzle Reveal

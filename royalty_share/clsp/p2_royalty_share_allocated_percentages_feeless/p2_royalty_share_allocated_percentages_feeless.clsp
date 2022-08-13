@@ -23,10 +23,14 @@
     (defun pay_to (royalty_allocations tip_jar_puzzlehash tip_amount total_amount)
         (if (l royalty_allocations)
         (c 
-            (list CREATE_COIN (f (f royalty_allocations)) (calc_share (f (r (f royalty_allocations))) total_amount))
+            (list CREATE_COIN (f (f royalty_allocations)) (calc_share (f (r (f royalty_allocations))) total_amount) (list (f (f royalty_allocations))))
             (pay_to (r royalty_allocations) tip_jar_puzzlehash tip_amount total_amount)
         )
-        (list (list CREATE_COIN tip_jar_puzzlehash tip_amount)))
+        (if (> tip_amount 0)
+        (list (list CREATE_COIN tip_jar_puzzlehash tip_amount (list tip_jar_puzzlehash)))
+        ()    
+        )
+        )
     )
 
     (defun calc_share (basis_points total_amount)
