@@ -1,4 +1,4 @@
-; p2_royalty_share_allocated_percentages_feeless.clsp 
+; p2_royalty_share_allocated_percentages_feeless.clsp
 ;
 ; ROYALTY_ALLOCATIONS is a List of 2-element lists (e.g. Pair) where the first 
 ;     element is the recipient puzzlehash and the second element is the percentage the recipient should receive, encoded as basis points
@@ -20,16 +20,48 @@
 (mod (ROYALTY_ALLOCATIONS TIP_JAR_PUZZLEHASH total_amount)
     (include condition_codes.clib)
 
-    (defun pay_to (royalty_allocations tip_jar_puzzlehash tip_amount total_amount)
+    (defun-inline calc_tip (sum_of_shares total_amount)
+        (- total_amount sum_of_shares)
+    )
+
+    (defun pay_to (royalty_shares tip_jar_puzzlehash total_amount)
+        (c
+            (pay_tip (sum_shares royalty_shares) tip_jar_puzzlehash total_amount)
+            (pay_shares royalty_shares total_amount)
+        )
+    )
+
+    (defun pay_shares (royalty_shares total_amount)
+        (if (l royalty_shares)
+            (c
+                (pay_share (f (f royalty_shares)) (f (r (f royalty_shares))))
+                (pay_shares (r royalty_shares) total_amount)
+            )
+            ()
+        )
+    )
+
+    (defun pay_share (share_puzzlehash share_amount)
+        (if (> share_amount 0)
+            (list CREATE_COIN share_puzzlehash share_amount (list share_puzzlehash))
+            ()
+        )
+    )
+
+    (defun pay_tip (sum_of_shares tip_jar_puzzlehash total_amount)
+        (if (> total_amount sum_of_shares)
+            (list CREATE_COIN tip_jar_puzzlehash (calc_tip sum_of_shares total_amount) (list tip_jar_puzzlehash))
+            ()    
+        )
+    )
+
+    (defun calc_shares (royalty_allocations total_amount)
         (if (l royalty_allocations)
-        (c 
-            (list CREATE_COIN (f (f royalty_allocations)) (calc_share (f (r (f royalty_allocations))) total_amount) (list (f (f royalty_allocations))))
-            (pay_to (r royalty_allocations) tip_jar_puzzlehash tip_amount total_amount)
-        )
-        (if (> tip_amount 0)
-        (list (list CREATE_COIN tip_jar_puzzlehash tip_amount (list tip_jar_puzzlehash)))
-        ()    
-        )
+            (c
+                (list (f (f royalty_allocations)) (calc_share (f (r (f royalty_allocations))) total_amount))
+                (calc_shares (r royalty_allocations) total_amount)
+            )
+            ()        
         )
     )
 
@@ -37,19 +69,16 @@
          (/ (* basis_points total_amount) 10000)
     )
 
-    (defun sum_shares (royalty_allocations total_amount)
-        (if (l royalty_allocations)
-        (+ (calc_share (f (r (f royalty_allocations))) total_amount) (sum_shares (r royalty_allocations) total_amount))
-        ()
+    (defun sum_shares (royalty_shares)
+        (if (l royalty_shares)
+            (+ (f (r (f royalty_shares))) (sum_shares (r royalty_shares)))
+            ()
         )
     )
 
-    (defun calc_tip (royalty_allocations total_amount)
-        (- total_amount (sum_shares royalty_allocations total_amount))
+    (c
+        (list CREATE_PUZZLE_ANNOUNCEMENT total_amount)
+        (c (list ASSERT_MY_AMOUNT total_amount) (pay_to (calc_shares ROYALTY_ALLOCATIONS total_amount) TIP_JAR_PUZZLEHASH total_amount))
     )
 
-    (c
-        (list ASSERT_MY_AMOUNT total_amount)
-        (pay_to ROYALTY_ALLOCATIONS TIP_JAR_PUZZLEHASH (calc_tip ROYALTY_ALLOCATIONS total_amount) total_amount)
-    )
 )
