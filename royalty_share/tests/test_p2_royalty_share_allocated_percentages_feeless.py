@@ -1,4 +1,5 @@
 from blspy import G2Element
+from hashlib import sha256
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -157,7 +158,7 @@ class TestP2RoyaltyShareAllocatedPercentagesFeeless:
             if coin.puzzle_hash == royalty_puzzle_hash:
                 royalty_coin_to_spend = coin
         assert royalty_coin_to_spend.puzzle_hash == royalty_puzzle_hash
-
+ 
         allocation_spend = CoinSpend(
             royalty_coin_to_spend,
             royalty_puzzle,
@@ -172,5 +173,48 @@ class TestP2RoyaltyShareAllocatedPercentagesFeeless:
         assert "error" not in allocation_spend_result
 
         return allocation_spend_result
+
+    @pytest.mark.asyncio
+    async def test_three_ways_uneven(self, setup):
+        network, alice, bob = setup
+        await(network.farm_block(farmer=alice))
+        
+        f001 = bytes32.fromhex('000000000000000000000000000000000000000000000000000000000000f001')
+        f002 = bytes32.fromhex('000000000000000000000000000000000000000000000000000000000000f002')
+        f003 = bytes32.fromhex('000000000000000000000000000000000000000000000000000000000000f003')
+        babe = bytes32.fromhex('00000000000000000000000000000000000000000000000000000000cafebabe')
+
+        try:
+            royalty_puzzle: Program = ROYALTY_MOD.curry([[f001, 8000], [f002, 1500], [f003, 500]], babe)
+            royalty_amount = uint64(1000000)
+
+            allocation_spend_result = await self.do_royalty_spends(network, alice, royalty_puzzle, royalty_amount)
+
+            allocation_spend_coins = allocation_spend_result["additions"]
+            assert 3 == len(allocation_spend_coins)
+            allocation_f001: Coin = None
+            allocation_f002: Coin = None
+            allocation_f003: Coin = None
+
+            for coin in allocation_spend_coins:
+                if coin.puzzle_hash == f001:
+                    allocation_f001 = coin
+                elif coin.puzzle_hash == f002:
+                    allocation_f002 = coin
+                elif coin.puzzle_hash == f003:
+                    allocation_f003 = coin
+
+            assert allocation_f001 is not None
+            assert allocation_f001.amount == uint64(800000)
+
+            assert allocation_f002 is not None
+            assert allocation_f002.amount == uint64(150000)
+
+            assert allocation_f003 is not None
+            assert allocation_f003.amount == uint64(50000)
+
+        finally:
+            await network.close()    
+
 
 

@@ -25,10 +25,10 @@
     )
 
     (defun pay_to (royalty_shares tip_jar_puzzlehash total_amount)
-        (c
+        (squish (c
             (pay_tip (sum_shares royalty_shares) tip_jar_puzzlehash total_amount)
             (pay_shares royalty_shares total_amount)
-        )
+        ))
     )
 
     (defun pay_shares (royalty_shares total_amount)
@@ -72,6 +72,20 @@
     (defun sum_shares (royalty_shares)
         (if (l royalty_shares)
             (+ (f (r (f royalty_shares))) (sum_shares (r royalty_shares)))
+            ()
+        )
+    )
+
+    ; remove empty () members
+    (defun squish (the_list)
+        (if (l the_list)
+            (if (not (l (f the_list)))
+                (squish (r the_list))
+                (c
+                    (f the_list)
+                    (squish (r the_list))
+                )
+            )
             ()
         )
     )
