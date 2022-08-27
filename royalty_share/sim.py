@@ -35,8 +35,7 @@ block_time = (600.0 / 32.0) / duration_div
 def secret_exponent_for_index(index: int) -> int:
     blob = index.to_bytes(32, "big")
     hashed_blob = BasicSchemeMPL.key_gen(std_hash(b"foo" + blob))
-    r = int.from_bytes(hashed_blob, "big")
-    return r
+    return int.from_bytes(hashed_blob, "big")
 
 
 def private_key_for_index(index: int) -> PrivateKey:
@@ -252,23 +251,12 @@ class Wallet:
         assert str(pk) in self.pk_to_sk_dict
         return self.pk_to_sk_dict[str(pk)]
 
-    def compute_combine_action(
-        self, amt: uint64, actions: List, usable_coins: Dict[bytes32, Coin]
-    ) -> Optional[List[Coin]]:
-        # No one coin is enough, try to find a best fit pair, otherwise combine the two
-        # maximum coins.
+    def compute_combine_action(self, amt: uint64, actions: List, usable_coins: Dict[bytes32, Coin]) -> Optional[List[Coin]]:
         searcher = CoinPairSearch(amt)
-
-        # Process coins for this round.
         for k, c in usable_coins.items():
             searcher.process_coin_for_combine_search(c)
-
         max_coins, total = searcher.get_result()
-
-        if total >= amt:
-            return max_coins
-        else:
-            return None
+        return max_coins if total >= amt else None
 
     # Given some coins, combine them, causing the network to make us
     # recompute our balance in return.
@@ -433,55 +421,29 @@ class Wallet:
         coin to the user or None if the spend failed."""
         amt = uint64(1)
         found_coin: Optional[CoinWrapper] = None
-
         if "amt" in kwargs:
             amt = kwargs["amt"]
-
         if "launcher" in kwargs:
             found_coin = kwargs["launcher"]
         else:
             found_coin = await self.choose_coin(amt)
-
         if found_coin is None:
             raise ValueError(f"could not find available coin containing {amt} mojo")
-
-        # Create a puzzle based on the incoming smart coin
         cw = SmartCoinWrapper(DEFAULT_CONSTANTS.GENESIS_CHALLENGE, source)
-        condition_args: List[List] = [
-            [ConditionOpcode.CREATE_COIN, cw.puzzle_hash(), amt],
-        ]
+        condition_args: List[List] = [[ConditionOpcode.CREATE_COIN, cw.puzzle_hash(), amt]]
+
         if amt < found_coin.amount:
             condition_args.append([ConditionOpcode.CREATE_COIN, self.puzzle_hash, found_coin.amount - amt])
 
         delegated_puzzle_solution = Program.to((1, condition_args))
         solution = Program.to([[], delegated_puzzle_solution, []])
+        signature: G2Element = AugSchemeMPL.sign(calculate_synthetic_secret_key(self.sk_, DEFAULT_HIDDEN_PUZZLE_HASH), ((delegated_puzzle_solution.get_tree_hash() + found_coin.name()) + DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA))
 
-        # Sign the (delegated_puzzle_hash + coin_name) with synthetic secret key
-        signature: G2Element = AugSchemeMPL.sign(
-            calculate_synthetic_secret_key(self.sk_, DEFAULT_HIDDEN_PUZZLE_HASH),
-            (
-                delegated_puzzle_solution.get_tree_hash()
-                + found_coin.name()
-                + DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA
-            ),
-        )
-
-        spend_bundle = SpendBundle(
-            [
-                CoinSpend(
-                    found_coin.as_coin(),  # Coin to spend
-                    self.puzzle,  # Puzzle used for found_coin
-                    solution,  # The solution to the puzzle locking found_coin
-                )
-            ],
-            signature,
-        )
+        spend_bundle = SpendBundle([CoinSpend(found_coin.as_coin(), self.puzzle, solution)], signature)
 
         pushed: Dict[str, Union[str, List[Coin]]] = await self.parent.push_tx(spend_bundle)
-        if "error" not in pushed:
-            return cw.custom_coin(found_coin, amt)
-        else:
-            return None
+
+        return cw.custom_coin(found_coin, amt) if "error" not in pushed else None
 
     # Give chia
     async def give_chia(self, target: "Wallet", amt: uint64) -> Optional[CoinWrapper]:
@@ -512,69 +474,43 @@ class Wallet:
         amt = uint64(1)
         if "amt" in kwargs:
             amt = kwargs["amt"]
-
         delegated_puzzle_solution: Optional[Program] = None
         if "args" not in kwargs:
             target_puzzle_hash: bytes32 = self.puzzle_hash
-            # Allow the user to 'give this much chia' to another user.
             if "to" in kwargs:
                 target_puzzle_hash = kwargs["to"].puzzle_hash
-
-            # Automatic arguments from the user's intention.
             if "custom_conditions" not in kwargs:
                 solution_list: List[List] = [[ConditionOpcode.CREATE_COIN, target_puzzle_hash, amt]]
+
             else:
                 solution_list = kwargs["custom_conditions"]
             if "remain" in kwargs:
                 remainer: Union[SmartCoinWrapper, Wallet] = kwargs["remain"]
                 remain_amt = uint64(coin.amount - amt)
                 if isinstance(remainer, SmartCoinWrapper):
-                    solution_list.append(
-                        [
-                            ConditionOpcode.CREATE_COIN,
-                            remainer.puzzle_hash(),
-                            remain_amt,
-                        ]
-                    )
+                    solution_list.append([ConditionOpcode.CREATE_COIN, remainer.puzzle_hash(), remain_amt])
+
                 elif isinstance(remainer, Wallet):
                     solution_list.append([ConditionOpcode.CREATE_COIN, remainer.puzzle_hash, remain_amt])
+
                 else:
                     raise ValueError("remainer is not a wallet or a smart coin")
-
             delegated_puzzle_solution = Program.to((1, solution_list))
-            # Solution is the solution for the old coin.
             solution = Program.to([[], delegated_puzzle_solution, []])
         else:
             delegated_puzzle_solution = Program.to(kwargs["args"])
             solution = delegated_puzzle_solution
-
-        solution_for_coin = CoinSpend(
-            coin.as_coin(),
-            coin.puzzle(),
-            solution,
-        )
-
-        # The reason this use of sign_coin_spends exists is that it correctly handles
-        # the signing for non-standard coins.  I don't fully understand the difference but
-        # this definitely does the right thing.
+        solution_for_coin = CoinSpend(coin.as_coin(), coin.puzzle(), solution)
         try:
-            spend_bundle: SpendBundle = await sign_coin_spends(
-                [solution_for_coin],
-                self.pk_to_sk,
-                DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA,
-                DEFAULT_CONSTANTS.MAX_BLOCK_COST_CLVM,
-            )
-        except ValueError:
-            spend_bundle = SpendBundle(
-                [solution_for_coin],
-                G2Element(),
-            )
+            spend_bundle: SpendBundle = await sign_coin_spends([solution_for_coin], self.pk_to_sk, DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA, DEFAULT_CONSTANTS.MAX_BLOCK_COST_CLVM)
 
-        if pushtx:
-            pushed: Dict[str, Union[str, List[Coin]]] = await self.parent.push_tx(spend_bundle)
-            return SpendResult(pushed)
-        else:
+        except ValueError:
+            spend_bundle = SpendBundle([solution_for_coin], G2Element())
+        if not pushtx:
             return spend_bundle
+        pushed: Dict[str, Union[str, List[Coin]]] = await self.parent.push_tx(spend_bundle)
+
+        return SpendResult(pushed)
 
 
 # A user oriented (domain specific) view of the chia network.
@@ -705,7 +641,9 @@ async def setup_node_only():
     return node
 
 
-def load_clsp_relative(filename: str, search_paths: List[Path] = [Path("include/")]):
+def load_clsp_relative(filename: str, search_paths: List[Path] = None):
+    if search_paths is None:
+        search_paths = [Path("include/")]
     base = Path().parent.resolve()
     source = base / filename
     target = base / f"{filename}.hex"
@@ -713,6 +651,5 @@ def load_clsp_relative(filename: str, search_paths: List[Path] = [Path("include/
     compile_clvm(source, target, searches)
     clvm = target.read_text()
     clvm_blob = bytes.fromhex(clvm)
-
     sp = SerializedProgram.from_bytes(clvm_blob)
     return Program.from_bytes(bytes(sp))
