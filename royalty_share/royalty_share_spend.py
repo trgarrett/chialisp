@@ -1,4 +1,5 @@
 import asyncio
+from typing import List
 from blspy import G2Element
 import json
 import sys
@@ -15,6 +16,7 @@ from chia.types.coin_record import CoinRecord
 from chia.types.coin_spend import CoinSpend
 from chia.types.spend_bundle import SpendBundle
 from chia.util.bech32m import encode_puzzle_hash, decode_puzzle_hash
+from chia.util.byte_types import hexstr_to_bytes
 from chia.util.condition_tools import conditions_for_solution
 from chia.util.config import load_config
 from chia.util.default_root import DEFAULT_ROOT_PATH
@@ -28,10 +30,9 @@ from chia.wallet.cat_wallet.cat_utils import (
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.transaction_record import TransactionRecord
 from chia.wallet.wallet import Wallet
+from clvm_tools.clvmc import compile_clvm
 
 from pathlib import Path
-from chia.util.byte_types import hexstr_to_bytes
-from sim import load_clsp_relative
 
 config = load_config(DEFAULT_ROOT_PATH, "config.yaml")
 self_hostname = "localhost"
@@ -110,7 +111,7 @@ async def calculate_cat_spend_bundle(coin_record: CoinRecord, node_client: FullN
     assert cat_puzzle.get_tree_hash() == decode_puzzle_hash(royalty_address)
     assert coin.puzzle_hash == cat_puzzle.get_tree_hash()
     parent_coin_spend: CoinSpend = await node_client.get_puzzle_and_solution(parent_coin.name(), parent_coin_record.spent_block_index)
-
+ 
     parent_puzzle_reveal: SerializedProgram = parent_coin_spend.puzzle_reveal
     prog_final, curried_args = parent_puzzle_reveal.uncurry()
     list_args = list(curried_args.as_iter())
@@ -132,7 +133,7 @@ def calculate_cat_royalty_address(royalty_address, asset_id):
     # using `puzzle-hash-of-curried-function` in curry_and_treehash.clib.
     outer_puzzlehash = CAT_MOD.curry(
         CAT_MOD.get_tree_hash(), bytes32.from_hexstr(asset_id), inner_puzzlehash_bytes32
-    ).get_tree_hash(inner_puzzlehash_bytes32)
+    ).get_tree_hash()
 
     return (encode_puzzle_hash(outer_puzzlehash, prefix), outer_puzzlehash)    
 
@@ -169,6 +170,19 @@ async def main():
         print(cat, asset_id)
         (cat_royalty_address, cat_royalty_puzzle_hash) = calculate_cat_royalty_address(royalty_address, asset_id)
         await spend_unspent_coins(cat_royalty_address, cat_royalty_puzzle_hash, royalty_puzzle, asset_id)
+
+def load_clsp_relative(filename: str, search_paths: List[Path] = None):
+    if search_paths is None:
+        search_paths = [Path("include/")]
+    base = Path().parent.resolve()
+    source = base / filename
+    target = base / f"{filename}.hex"
+    searches = [base / s for s in search_paths]
+    compile_clvm(source, target, searches)
+    clvm = target.read_text()
+    clvm_blob = bytes.fromhex(clvm)
+    sp = SerializedProgram.from_bytes(clvm_blob)
+    return Program.from_bytes(bytes(sp))
 
 if __name__ == "__main__":
     asyncio.run(main())
