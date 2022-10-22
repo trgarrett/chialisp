@@ -133,7 +133,7 @@ def calculate_cat_royalty_address(royalty_address, asset_id):
     # using `puzzle-hash-of-curried-function` in curry_and_treehash.clib.
     outer_puzzlehash = CAT_MOD.curry(
         CAT_MOD.get_tree_hash(), bytes32.from_hexstr(asset_id), inner_puzzlehash_bytes32
-    ).get_tree_hash()
+    ).get_tree_hash(inner_puzzlehash_bytes32)
 
     return (encode_puzzle_hash(outer_puzzlehash, prefix), outer_puzzlehash)    
 
