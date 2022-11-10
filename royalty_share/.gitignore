@@ -3,3 +3,4 @@ spend.json
 runtime_data
 __pycache__
 main.sym
+.DS_Store

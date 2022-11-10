@@ -1,0 +1,59 @@
+(mod (PAYOUT_SCHEME my_amount total_shares)
+
+  (include condition_codes.clib)
+  (include curry_and_treehash.clib)
+
+  (defun-inline get_puzhash (payout_scheme_item)
+    (f payout_scheme_item)
+  )
+
+  (defun-inline get_share (payout_scheme_item)
+    (f (r payout_scheme_item))
+  )
+
+  (defun-inline calculate_share (total_amount share total_shares)
+    (f (divmod (* total_amount share) total_shares))
+  )
+
+  (defun-inline get_amount (payout_scheme_item total_amount total_shares)
+    (calculate_share total_amount (get_share payout_scheme_item) total_shares)
+  )
+
+  (defun calculate_amount_and_split (PAYOUT_SCHEME total_amount total_shares shares_sum remaining_amount)
+    (if PAYOUT_SCHEME
+      (split_amount_and_create_coins PAYOUT_SCHEME (get_amount (f PAYOUT_SCHEME) total_amount total_shares) total_amount total_shares shares_sum remaining_amount)
+      (if (= total_shares shares_sum) 
+        ()
+        (x)
+      )
+    )
+  )
+
+   ; Loop through the royalty payout scheme and create coins
+  (defun split_amount_and_create_coins (PAYOUT_SCHEME this_amount total_amount total_shares shares_sum remaining_amount)
+    (c
+      (list
+        CREATE_COIN
+        (get_puzhash (f PAYOUT_SCHEME))
+        (if (r PAYOUT_SCHEME) this_amount remaining_amount)
+        (list (get_puzhash (f PAYOUT_SCHEME)))
+      )
+      (calculate_amount_and_split 
+        (r PAYOUT_SCHEME)
+        total_amount 
+        total_shares 
+        (+ shares_sum (get_share (f PAYOUT_SCHEME)))
+        (- remaining_amount this_amount)
+      )
+    )
+  )
+
+  ; main
+  (c
+    (list CREATE_COIN_ANNOUNCEMENT ())
+    (c
+      (list ASSERT_MY_AMOUNT my_amount)
+      (calculate_amount_and_split PAYOUT_SCHEME my_amount total_shares 0 my_amount)
+    )
+  )
+)
