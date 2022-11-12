@@ -44,22 +44,33 @@ prefix = "xch"
 def print_json(dict):
     print(json.dumps(dict, sort_keys=True, indent=4))
 
-async def spend_unspent_coins(royalty_address, royalty_puzzle_hash, royalty_puzzle, cat_asset_id=None):  
+async def spend_unspent_coins(royalty_address, royalty_puzzle_hash, royalty_puzzle: Program, cat_asset_id=None):  
     try:
         if cat_asset_id:
             print(f"\tTrying address {royalty_address} as CAT with TAIL hash {cat_asset_id}")
         node_client = await FullNodeRpcClient.create(self_hostname, uint16(full_node_rpc_port), DEFAULT_ROOT_PATH, config)
-        all_royalty_coins = await node_client.get_coin_records_by_puzzle_hash(royalty_puzzle_hash, False, 2180000)
+        all_royalty_coins = await node_client.get_coin_records_by_puzzle_hash(royalty_puzzle_hash, False, 0)
         for coin_record in all_royalty_coins:
             try:
                 coin_record = await node_client.get_coin_record_by_name(coin_record.coin.name())
-                print(f"unspent coin_record: \r\n{coin_record}")        
+                print(f"unspent coin_record: \r\n{coin_record}")    
+                
+                # calculate total number of shares
+                mod, curried_args = royalty_puzzle.uncurry()
+                if mod == CAT_MOD:
+                    mod, curried_args = curried_args.at("rrf").uncurry()
+                payout_scheme = curried_args.first()
+
+                total_shares = 0
+                for entry in payout_scheme.as_iter():
+                    total_shares += entry.rest().first().as_int()
+                
 
                 #Spent Coin
                 coin_spend = CoinSpend(
                     coin_record.coin,
                     royalty_puzzle,
-                    Program.to([coin_record.coin.amount])
+                    Program.to([coin_record.coin.amount, total_shares])
                 )
                 # empty signature i.e., c00000.....
                 signature = G2Element()
@@ -117,8 +128,18 @@ async def calculate_cat_spend_bundle(coin_record: CoinRecord, node_client: FullN
     list_args = list(curried_args.as_iter())
     parent_inner_puzzlehash: bytes32 = list_args[-1].get_tree_hash()
     lineage_proof = LineageProof(parent_coin.parent_coin_info, parent_inner_puzzlehash, parent_coin.amount)
+    
+    # calculate total number of shares
+    mod, curried_args = royalty_puzzle.uncurry()
+    if mod == CAT_MOD:
+        mod, curried_args = curried_args.at("rrf").uncurry()
+    payout_scheme = curried_args.first()
 
-    spendable_cat = SpendableCAT(coin, bytes.fromhex(cat_asset_id), royalty_puzzle, Program.to([coin.amount]), Program.to([]), lineage_proof, 0)
+    total_shares = 0
+    for entry in payout_scheme.as_iter():
+        total_shares += entry.rest().first().as_int()
+
+    spendable_cat = SpendableCAT(coin, bytes.fromhex(cat_asset_id), royalty_puzzle, Program.to([coin.amount, total_shares]), Program.to([]), lineage_proof, 0)
 
     return unsigned_spend_bundle_for_spendable_cats(CAT_MOD, [spendable_cat])
 
@@ -133,7 +154,7 @@ def calculate_cat_royalty_address(royalty_address, asset_id):
     # using `puzzle-hash-of-curried-function` in curry_and_treehash.clib.
     outer_puzzlehash = CAT_MOD.curry(
         CAT_MOD.get_tree_hash(), bytes32.from_hexstr(asset_id), inner_puzzlehash_bytes32
-    ).get_tree_hash(inner_puzzlehash_bytes32)
+    ).get_tree_hash_precalc(inner_puzzlehash_bytes32)
 
     return (encode_puzzle_hash(outer_puzzlehash, prefix), outer_puzzlehash)    
 
@@ -162,7 +183,8 @@ async def main():
     # TODO: look at API or CSV import of all/as many as you care about
     cats = {
         "LKY8": "e5a8af7124c2737283838e6797b0f0a5293fc81aca1ffd2720f8506c23f2ad88",
-        "SBX": "a628c1c2c6fcb74d53746157e438e108eab5c0bb3e5c80ff9b1910b3e4832913"
+        "SBX": "a628c1c2c6fcb74d53746157e438e108eab5c0bb3e5c80ff9b1910b3e4832913",
+        "TEST": "2267357bf318926f9ccaa5b68e1d4527df89b00c4aed41d6d590d75aa6fa0ff4"
     }
 
     print('Checking CAT spends...')
