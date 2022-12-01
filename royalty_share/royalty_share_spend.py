@@ -56,8 +56,8 @@ prefix = "xch"
 global wallet_keys
 wallet_keys = []
 
-MIN_FEE = 50
-DERIVATIONS = 100
+MIN_FEE = 100
+DERIVATIONS = 1000
 
 def print_json(dict):
     print(json.dumps(dict, sort_keys=True, indent=4))
@@ -175,7 +175,6 @@ async def calculate_change_spend(node_client: FullNodeRpcClient, fee_coin: Coin,
     # FIXME - if we further aggregate spend bundles, we need to assert ALL spends
     peer_coin_id = peer_coin_spends[0].coin.name()
     assert_coin_announcement = Announcement(peer_coin_id, b'').name()
-
 
     solution = Wallet().make_solution(
         primaries=primaries,
