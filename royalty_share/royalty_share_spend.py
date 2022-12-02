@@ -158,7 +158,7 @@ async def add_fees_and_sign_spend_bundle(spend_bundle: SpendBundle, node_client:
     fees_remaining: uint64 = await estimate_fees_by_mempool(spend_bundle, node_client)
     print(f'Calculated target fees of {fees_remaining} using mempool')
     
-    fee_coins = await wallet_client.select_coins(amount=uint64(MIN_FEE), wallet_id=1, excluded_coins=list(recent_fee_coins))
+    fee_coins = await wallet_client.select_coins(amount=uint64(MAX_FEE), wallet_id=1, excluded_coins=list(recent_fee_coins))
 
     print(f'evaluating {len(fee_coins)} coin(s) for fees')
     for fee_coin in fee_coins:
