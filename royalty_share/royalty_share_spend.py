@@ -59,7 +59,7 @@ global wallet_keys
 wallet_keys = []
 
 MIN_FEE = 1
-MAX_FEE = 5000
+MAX_FEE = 50000
 DERIVATIONS = 1000
 
 ASSERT_COIN_ANNOUNCEMENT = os.environ.get('ASSERT_COIN_ANNOUNCEMENT', True) is True
@@ -142,7 +142,7 @@ def wallet_keyf(pk):
 
 async def estimate_fees_by_mempool(spend_bundle: SpendBundle, node_client: FullNodeRpcClient) -> uint64:
     mempool_size = len(await node_client.get_all_mempool_tx_ids())
-    huge_mempool = float(300.0)
+    huge_mempool = float(400.0)
     if mempool_size < 10:
         return uint64(MIN_FEE)
     elif mempool_size > huge_mempool:
