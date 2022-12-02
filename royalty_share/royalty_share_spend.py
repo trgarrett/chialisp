@@ -1,9 +1,11 @@
 import asyncio
-from typing import List
 from blspy import G2Element
+from collections import deque
 import json
+import os
 import sys
 import time
+from typing import List
 
 from chia.consensus.default_constants import DEFAULT_CONSTANTS
 AGG_SIG_ME_ADDITIONAL_DATA = DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA
@@ -56,8 +58,14 @@ prefix = "xch"
 global wallet_keys
 wallet_keys = []
 
-MIN_FEE = 100
+MIN_FEE = 1
+MAX_FEE = 5000
 DERIVATIONS = 1000
+
+ASSERT_COIN_ANNOUNCEMENT = os.environ.get('ASSERT_COIN_ANNOUNCEMENT', True) is True
+print(f'ASSERT_COIN_ANNOUNCEMENT: {ASSERT_COIN_ANNOUNCEMENT}')
+
+recent_fee_coins: deque = deque([], 10)
 
 def print_json(dict):
     print(json.dumps(dict, sort_keys=True, indent=4))
@@ -132,25 +140,41 @@ def wallet_keyf(pk):
             return synth_key
     raise Exception("Evaluated all keys without finding PK match!")
 
+async def estimate_fees_by_mempool(spend_bundle: SpendBundle, node_client: FullNodeRpcClient) -> uint64:
+    mempool_size = len(await node_client.get_all_mempool_tx_ids())
+    huge_mempool = float(300.0)
+    if mempool_size < 10:
+        return uint64(MIN_FEE)
+    elif mempool_size > huge_mempool:
+        return uint64(MAX_FEE)
+    else:
+        return uint64(MAX_FEE * (mempool_size / huge_mempool))
+
+
 async def add_fees_and_sign_spend_bundle(spend_bundle: SpendBundle, node_client: FullNodeRpcClient, wallet_client: WalletRpcClient):
     updated_coin_spends = []
     updated_coin_spends.extend(spend_bundle.coin_spends)
 
-    fees_remaining: uint64 = uint64(MIN_FEE)
-    print(f'Signing spend bundle with non-empty signature, applying {fees_remaining} mojos fee.')
+    fees_remaining: uint64 = await estimate_fees_by_mempool(spend_bundle, node_client)
+    print(f'Calculated target fees of {fees_remaining} using mempool')
     
-    fee_coins = await wallet_client.select_coins(amount=uint64(MIN_FEE), wallet_id=1)
+    fee_coins = await wallet_client.select_coins(amount=uint64(MIN_FEE), wallet_id=1, excluded_coins=list(recent_fee_coins))
 
     print(f'evaluating {len(fee_coins)} coin(s) for fees')
     for fee_coin in fee_coins:
         print(f'{fee_coin}')
         if fees_remaining <= 0:
             break
-        if fee_coin.amount > fees_remaining:
+        if fee_coin.amount >= fees_remaining:
+            recent_fee_coins.append(fee_coin)
             change_spend = await calculate_change_spend(node_client, fee_coin, fees_remaining, spend_bundle.coin_spends)
             updated_coin_spends.append(change_spend)
             fees_remaining = 0
-        # FIXME - missing case where we can only get PART of the fees from one coin
+        elif fee_coin.amount < fees_remaining:
+            change_spend = await calculate_change_spend(node_client, fee_coin, fee_coin.amount, spend_bundle.coin_spends)
+            updated_coin_spends.append(change_spend)
+            fees_remaining -= fee_coin.amount
+            recent_fee_coins.append(fee_coin)
 
     spend_bundle = await sign_coin_spends(updated_coin_spends, wallet_keyf, AGG_SIG_ME_ADDITIONAL_DATA, MAX_BLOCK_COST_CLVM)
 
@@ -174,14 +198,20 @@ async def calculate_change_spend(node_client: FullNodeRpcClient, fee_coin: Coin,
 
     # FIXME - if we further aggregate spend bundles, we need to assert ALL spends
     peer_coin_id = peer_coin_spends[0].coin.name()
-    assert_coin_announcement = Announcement(peer_coin_id, b'').name()
 
-    solution = Wallet().make_solution(
-        primaries=primaries,
-        fee=fee_amount,
-        # make sure our bundles aren't separated
-        coin_announcements_to_assert = [assert_coin_announcement]
-    )
+    if ASSERT_COIN_ANNOUNCEMENT is True:
+        assert_coin_announcement = Announcement(peer_coin_id, b'').name()
+        solution = Wallet().make_solution(
+            primaries=primaries,
+            fee=fee_amount,
+            # make sure our bundles aren't separated
+            coin_announcements_to_assert = [assert_coin_announcement]
+        )
+    else:
+        solution = Wallet().make_solution(
+            primaries=primaries,
+            fee=fee_amount
+        )
 
     print(f'solution: {solution}')
 
