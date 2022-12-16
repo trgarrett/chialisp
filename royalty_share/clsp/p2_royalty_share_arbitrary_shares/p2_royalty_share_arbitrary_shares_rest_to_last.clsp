@@ -1,4 +1,12 @@
-(mod (PAYOUT_SCHEME my_amount total_shares)
+; This puzzle is designed to split its coin amount according to a predefined payout scheme.
+
+(mod
+  (
+  PAYOUT_SCHEME ; The payout scheme is a list of recipient puzzle hashes and their share, e.g.
+                ; ((0xcafef00d 80) (0xdeadbeef 20)) for an 80/20 split
+  my_amount ; The amount of the coin to be split.
+  total_shares ; The sum of all shares in the payout scheme. Passed in to reduce the complexity of the puzzle.
+  )
 
   (include condition_codes.clib)
   (include curry_and_treehash.clib)
@@ -19,12 +27,13 @@
     (calculate_share total_amount (get_share payout_scheme_item) total_shares)
   )
 
+  ; mutual recursive function to calculate the amount only once
   (defun calculate_amount_and_split (PAYOUT_SCHEME total_amount total_shares shares_sum remaining_amount)
     (if PAYOUT_SCHEME
       (split_amount_and_create_coins PAYOUT_SCHEME (get_amount (f PAYOUT_SCHEME) total_amount total_shares) total_amount total_shares shares_sum remaining_amount)
-      (if (= total_shares shares_sum) 
+      (if (= total_shares shares_sum)
         ()
-        (x)
+        (x) ; raise if total shares input doesn't match the sum of all shares
       )
     )
   )
@@ -38,10 +47,10 @@
         (if (r PAYOUT_SCHEME) this_amount remaining_amount)
         (list (get_puzhash (f PAYOUT_SCHEME)))
       )
-      (calculate_amount_and_split 
+      (calculate_amount_and_split
         (r PAYOUT_SCHEME)
-        total_amount 
-        total_shares 
+        total_amount
+        total_shares
         (+ shares_sum (get_share (f PAYOUT_SCHEME)))
         (- remaining_amount this_amount)
       )
