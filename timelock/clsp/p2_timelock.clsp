@@ -1,0 +1,11 @@
+(mod (RELEASE_TO_PUZZLE_HASH NUM_BLOCKS_LOCK my_amount)
+
+  (include condition_codes.clib)
+
+  ; main
+  (list
+    (list CREATE_COIN_ANNOUNCEMENT ())
+    (list ASSERT_MY_AMOUNT my_amount)
+    (list ASSERT_HEIGHT_RELATIVE NUM_BLOCKS_LOCK)
+  )
+)
