@@ -40,47 +40,47 @@ async def spend_nfts(address, puzzle_hash):
         print("************************************************************************************************************************************")
         for coin_record in all_coins:
             try:
-                print('a')
+                #print('a')
                 if coin_record.coin.puzzle_hash != puzzle_hash:
                     parent_coin_record = await node_client.get_coin_record_by_name(coin_record.coin.parent_coin_info)
-                    print('b')
+                    #print('b')
                     assert parent_coin_record is not None
                     puzzle_and_solution: CoinSpend = await node_client.get_puzzle_and_solution(coin_id=coin_record.coin.parent_coin_info, height=parent_coin_record.spent_block_index)
                     parent_puzzle_reveal = puzzle_and_solution.puzzle_reveal
-                    print('c')
+                    #print('c')
                     #print(bytes(puzzle_and_solution.puzzle_reveal.to_program().to_serialized_program()).hex())
-                    timelock_program_hex = "ff02ffff01ff02ffff01ff04ffff04ff0effff01ff808080ffff04ffff04ff08ffff04ff17ff808080ffff04ffff04ff0cffff04ff0bff808080ffff04ffff04ff0affff04ff05ffff04ff17ffff04ffff04ff05ff8080ff8080808080ff8080808080ffff04ffff01ffff4950ff333cff018080ffff04ffff01c04038316632616464353939653933376264346538633764393461323230653565306638646631363631326461373333316462633331646662343033363937343565ffff04ffff018200b4ff01808080"
+                    timelock_program_hex = "ff02ffff01ff02ffff01ff04ffff04ff0effff01ff808080ffff04ffff04ff08ffff04ff17ff808080ffff04ffff04ff0cffff04ff0bff808080ffff04ffff04ff0affff04ff05ffff04ff17ffff04ffff04ff05ff8080ff8080808080ff8080808080ffff04ffff01ffff4950ff333cff018080ffff04ffff01a081f2add599e937bd4e8c7d94a220e5e0f8df16612da7331dbc31dfb40369745effff04ffff018200b4ff01808080"
                     timelock_clvm_blob = bytes.fromhex(timelock_program_hex)
                     timelock_inner_sp = SerializedProgram.from_bytes(timelock_clvm_blob)
                     p2_puzzle = Program.from_bytes(bytes(timelock_inner_sp))
-                    print('d')
+                    #print('d')
 
                     try:
                         #print(f'parent_puzzle_reveal treehash: {parent_puzzle_reveal.get_tree_hash()}')
                         nft_program = Program.from_bytes(bytes(parent_puzzle_reveal))
-                        print('d.1')
+                        #print('d.1')
                         unft = UncurriedNFT.uncurry(*nft_program.uncurry())
-                        print('d.2')
+                        #print('d.2')
 
                         parent_puzzle, curried_args = parent_puzzle_reveal.uncurry()
-                        print('d.3')
+                        #print('d.3')
 
                         list_args = list(curried_args.as_iter())
                         parent_inner_puzzlehash = unft.nft_state_layer.get_tree_hash()
-                        print('d.4')
+                        #print('d.4')
 
                         #print(f'singleton launcher id {unft.singleton_launcher_id.hex()}')
                         #print(f'metadata: {unft.metadata}')
                         #print(f'metadata_updater_hash: {unft.metadata_updater_hash}')
                         #print(f'p2_puzzle hash: {p2_puzzle.get_tree_hash().hex()}')
                         #assert p2_puzzle.get_tree_hash().hex() == "7607010a48321bc3b184a89d396101598d2098b6de536c1f7d1fe7e68c039a2c"
-                        print('e')
+                        #print('e')
                         
                         # metadata = {}
                         # for kv_pair in unft.metadata.as_iter():
                         #     metadata[kv_pair.first().as_atom()] = kv_pair.rest().as_python()
             
-                        print(f'coin puzzle_hash: {coin_record.coin.puzzle_hash.hex()}')
+                        #print(f'coin puzzle_hash: {coin_record.coin.puzzle_hash.hex()}')
                         
                         # print(unft.launcher_puzhash)
                         # print(unft.nft_inner_puzzle_hash)
@@ -91,7 +91,7 @@ async def spend_nfts(address, puzzle_hash):
                         if unft is not None and unft.transfer_program_curry_params:
                             nft_puzzle_hash = bytes32.from_bytes(unft.transfer_program_curry_params.as_python()[0][1])
                             print(f"{nft_puzzle_hash.hex()} -> {encode_puzzle_hash(nft_puzzle_hash, 'nft')}")
-                            print(f"\tlast solution: '{puzzle_and_solution.solution}'\n\n")
+                            #print(f"\tlast solution: '{puzzle_and_solution.solution}'\n\n")
                             
                             lineage_proof = LineageProof(parent_coin_record.coin.parent_coin_info, parent_inner_puzzlehash, 1)
                             #primaries = [{"puzzlehash": puzzle_hash, "amount": 1, "memos": [puzzle_hash]}]
@@ -113,14 +113,14 @@ async def spend_nfts(address, puzzle_hash):
                             nft_layer_solution: Program = Program.to([innersol])
 
                             if unft.supports_did:
-                                print('recurry for supports_did')
+                                #print('recurry for supports_did')
                                 inner_puzzle = nft_puzzles.recurry_nft_puzzle(unft, puzzle_and_solution.solution.to_program(), p2_puzzle)
                             else:
-                                print('inner puzzle is p2_puzzle')
+                                #print('inner puzzle is p2_puzzle')
                                 inner_puzzle = p2_puzzle
 
                             full_puzzle = nft_puzzles.create_full_puzzle(unft.singleton_launcher_id, unft.metadata, unft.metadata_updater_hash, inner_puzzle)
-                            print(f'full_puzzle_hash: {full_puzzle.get_tree_hash().hex()}')
+                            #print(f'full_puzzle_hash: {full_puzzle.get_tree_hash().hex()}')
 
                             assert full_puzzle.get_tree_hash().hex() == coin_record.coin.puzzle_hash.hex()
 
@@ -129,7 +129,7 @@ async def spend_nfts(address, puzzle_hash):
                             coin_spend = CoinSpend(coin_record.coin, full_puzzle, singleton_solution)
                             nft_spend_bundle = SpendBundle([coin_spend], G2Element())
 
-                            print(f'spend bundle: {print_json(nft_spend_bundle.to_json_dict())}')
+                            #print(f'spend bundle: {print_json(nft_spend_bundle.to_json_dict())}')
                             status = await node_client.push_tx(nft_spend_bundle)
                             print_json(status)
 
@@ -137,8 +137,8 @@ async def spend_nfts(address, puzzle_hash):
                         print(f"Probably not an NFT? {traceback.format_exc(e)}")
                         pass 
             except Exception as e:
-                print('Failed on: ')
-                print(repr(e))
+                print(f'Failed on: {e}')
+                #print(repr(e))
                 print('\r\n...Continuing to next coin')
     finally:
         node_client.close()
