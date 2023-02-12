@@ -6,7 +6,7 @@ import os
 import requests
 import sys
 import time
-from typing import List
+from typing import List, Optional
 
 from chia.consensus.default_constants import DEFAULT_CONSTANTS
 AGG_SIG_ME_ADDITIONAL_DATA = DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA

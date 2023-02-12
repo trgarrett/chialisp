@@ -1,4 +1,4 @@
-(mod (RELEASE_TO_PUZZLE_HASH NUM_BLOCKS_LOCK my_amount)
+(mod (RELEASE_TO_PUZZLE_HASH NUM_SECONDS_LOCK my_amount)
 
   (include condition_codes.clib)
 
@@ -6,7 +6,7 @@
   (list
     (list CREATE_COIN_ANNOUNCEMENT ())
     (list ASSERT_MY_AMOUNT my_amount)
-    (list ASSERT_HEIGHT_RELATIVE NUM_BLOCKS_LOCK)
+    (list ASSERT_SECONDS_RELATIVE NUM_SECONDS_LOCK)
     (list CREATE_COIN RELEASE_TO_PUZZLE_HASH my_amount (list RELEASE_TO_PUZZLE_HASH))
   )
 )
