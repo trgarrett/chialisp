@@ -7,7 +7,6 @@ MAX_BLOCK_COST_CLVM = DEFAULT_CONSTANTS.MAX_BLOCK_COST_CLVM
 
 from chia.rpc.full_node_rpc_client import FullNodeRpcClient
 from chia.types.blockchain_format.coin import Coin
-from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.coin_spend import CoinSpend
 from chia.util.bech32m import decode_puzzle_hash, encode_puzzle_hash
@@ -27,7 +26,6 @@ from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
 from chia.wallet.sign_coin_spends import sign_coin_spends
 from chia.wallet.wallet import Wallet
 
-from pathlib import Path
 
 config = load_config(DEFAULT_ROOT_PATH, "config.yaml")
 self_hostname = "localhost"
