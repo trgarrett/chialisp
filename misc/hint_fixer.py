@@ -81,13 +81,13 @@ async def fix_unhinted_coins(address, hint_puzzlehash, actual_puzzlehash):
 
             for coin_id in difference:
                 coin = coins[coin_id]
-                await spend_coin(coin, node_client)
+                await spend_coin(node_client, coin, hint_puzzlehash)
 
     finally:
         node_client.close()
         await node_client.await_closed()
 
-async def spend_coin(coin: Coin, node_client):
+async def spend_coin(node_client, coin: Coin, hint_puzzlehash: bytes32):
     print(f'spend_coin: {coin}')
 
     puzzle_reveal = None
@@ -99,7 +99,7 @@ async def spend_coin(coin: Coin, node_client):
             puzzle_reveal = candidate_puzzle_reveal
             break
 
-    primaries = [{"puzzlehash": coin.puzzle_hash, "amount": coin.amount, "memos": [coin.puzzle_hash]}]
+    primaries = [{"puzzlehash": coin.puzzle_hash, "amount": coin.amount, "memos": [hint_puzzlehash]}]
     solution = Wallet().make_solution(
         primaries=primaries
     )
