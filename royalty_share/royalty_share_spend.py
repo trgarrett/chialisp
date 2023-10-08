@@ -16,7 +16,8 @@ from chia.rpc.wallet_rpc_client import WalletRpcClient
 
 from chia.types.announcement import Announcement
 from chia.types.blockchain_format.coin import Coin
-from chia.types.blockchain_format.program import Program, SerializedProgram
+from chia.types.blockchain_format.program import Program
+from chia.types.blockchain_format.serialized_program import SerializedProgram
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.coin_record import CoinRecord
 from chia.types.coin_spend import CoinSpend
@@ -36,14 +37,17 @@ from chia.wallet.cat_wallet.cat_utils import (
 )
 from chia.wallet.derive_keys import master_sk_to_wallet_sk, master_sk_to_wallet_sk_unhardened
 from chia.wallet.lineage_proof import LineageProof
+from chia.wallet.payment import Payment
 from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
     DEFAULT_HIDDEN_PUZZLE_HASH,
     calculate_synthetic_secret_key,
-    puzzle_for_pk
+    puzzle_for_pk,
+    puzzle_hash_for_synthetic_public_key,
 )
 from chia.wallet.puzzles.puzzle_utils import make_assert_coin_announcement
 from chia.wallet.sign_coin_spends import sign_coin_spends
 from chia.wallet.transaction_record import TransactionRecord
+from chia.wallet.util.tx_config import CoinSelectionConfig
 from chia.wallet.wallet import Wallet
 from clvm_tools.clvmc import compile_clvm
 
@@ -60,12 +64,12 @@ wallet_keys = []
 
 MIN_FEE = 1
 MAX_FEE = 50000
-DERIVATIONS = 1000
+DERIVATIONS = 5000
 
 ASSERT_COIN_ANNOUNCEMENT = os.environ.get('ASSERT_COIN_ANNOUNCEMENT', True) is True
 print(f'ASSERT_COIN_ANNOUNCEMENT: {ASSERT_COIN_ANNOUNCEMENT}')
 
-recent_fee_coins: deque = deque([], 10)
+recent_fee_coin_ids: deque = deque([], 200)
 
 def print_json(dict):
     print(json.dumps(dict, sort_keys=True, indent=4))
@@ -158,7 +162,8 @@ async def add_fees_and_sign_spend_bundle(spend_bundle: SpendBundle, node_client:
     fees_remaining: uint64 = await estimate_fees_by_mempool(spend_bundle, node_client)
     print(f'Calculated target fees of {fees_remaining} using mempool')
     
-    fee_coins = await wallet_client.select_coins(amount=uint64(MAX_FEE), wallet_id=1, excluded_coins=list(recent_fee_coins))
+    fee_coins = await wallet_client.select_coins(amount=uint64(MAX_FEE), wallet_id=1, 
+                                                 coin_selection_config=CoinSelectionConfig(min_coin_amount=MIN_FEE, max_coin_amount=100000000, excluded_coin_amounts=[0,1], excluded_coin_ids=list(recent_fee_coin_ids)))
 
     print(f'evaluating {len(fee_coins)} coin(s) for fees')
     for fee_coin in fee_coins:
@@ -166,7 +171,7 @@ async def add_fees_and_sign_spend_bundle(spend_bundle: SpendBundle, node_client:
         if fees_remaining <= 0:
             break
         if fee_coin.amount >= fees_remaining:
-            recent_fee_coins.append(fee_coin)
+            recent_fee_coin_ids.append(fee_coin.name())
             change_spend = await calculate_change_spend(node_client, fee_coin, fees_remaining, spend_bundle.coin_spends)
             updated_coin_spends.append(change_spend)
             fees_remaining = 0
@@ -174,11 +179,17 @@ async def add_fees_and_sign_spend_bundle(spend_bundle: SpendBundle, node_client:
             change_spend = await calculate_change_spend(node_client, fee_coin, fee_coin.amount, spend_bundle.coin_spends)
             updated_coin_spends.append(change_spend)
             fees_remaining -= fee_coin.amount
-            recent_fee_coins.append(fee_coin)
+            recent_fee_coin_ids.append(fee_coin.name())
 
-    spend_bundle = await sign_coin_spends(updated_coin_spends, wallet_keyf, AGG_SIG_ME_ADDITIONAL_DATA, MAX_BLOCK_COST_CLVM)
+    return await sign_coin_spends(
+        updated_coin_spends,
+        wallet_keyf,
+        None,
+        AGG_SIG_ME_ADDITIONAL_DATA,
+        MAX_BLOCK_COST_CLVM,
+        [puzzle_hash_for_synthetic_public_key],
+    )
 
-    return spend_bundle
 
 async def calculate_change_spend(node_client: FullNodeRpcClient, fee_coin: Coin, fee_amount: uint64, peer_coin_spends: List[CoinSpend]):
 
@@ -194,7 +205,7 @@ async def calculate_change_spend(node_client: FullNodeRpcClient, fee_coin: Coin,
 
     change_amount = fee_coin.amount - fee_amount
     destination_puzzlehash = fee_coin.puzzle_hash
-    primaries = [{"puzzlehash": destination_puzzlehash, "amount": change_amount, "memos": [destination_puzzlehash]}]
+    primaries = [Payment(destination_puzzlehash, change_amount, [destination_puzzlehash])]
 
     # FIXME - if we further aggregate spend bundles, we need to assert ALL spends
     peer_coin_id = peer_coin_spends[0].coin.name()
@@ -320,8 +331,22 @@ async def main():
         "LKY8": "e5a8af7124c2737283838e6797b0f0a5293fc81aca1ffd2720f8506c23f2ad88",
         "SBX": "a628c1c2c6fcb74d53746157e438e108eab5c0bb3e5c80ff9b1910b3e4832913",
         "TEST": "2267357bf318926f9ccaa5b68e1d4527df89b00c4aed41d6d590d75aa6fa0ff4",
-        "USDS": "6d95dae356e32a71db5ddcb42224754a02524c615c5fc35f568c2af04774e589"
+        "USDS": "6d95dae356e32a71db5ddcb42224754a02524c615c5fc35f568c2af04774e589",
+        "ALGOLD": "446f5c3532929f71fa82f1c65f7e93170dcfbf8d59baf82a81b6f8e8f85e8a5c",
+        "WTF2": "ef9df6c687ed9a325369f32ba38eb6dc83a1bd081e159a9b2dddfe6159e2ecf0",
     }
+
+    import json
+    import requests
+    resp = requests.get('https://mainnet-api.taildatabase.com/tails', timeout=30)
+    tails = json.loads(resp.content)
+
+    for tail in tails:
+        code = tail['code']
+        hash = tail['hash']
+        cats[code] = hash
+
+    print(f'Loaded {len(cats)} CAT tails')
 
     print('Checking CAT spends...')
     for cat, asset_id in cats.items():
@@ -344,3 +369,4 @@ def load_clsp_relative(filename: str, search_paths: List[Path] = None):
 
 if __name__ == "__main__":
     asyncio.run(main())
+
