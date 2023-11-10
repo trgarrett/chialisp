@@ -138,16 +138,17 @@ class Inferno:
             driver_dict[nft_new_launcher_id] = await self.get_puzzle_info(nft_new_launcher_id)
             nft_new_launcher_coin_record: CoinRecord = await self.node_client.get_coin_record_by_name(nft_new_launcher_id)
             assert nft_new_launcher_coin_record is not None
-            nft_new_latest_coin_record: CoinRecord = await self.find_unspent_descendant(nft_new_launcher_coin_record)
-            assert nft_new_latest_coin_record is not None
-            offered_coins.append(nft_new_latest_coin_record.coin)
-            each_fee: int = int(fee / (len(new_ids)))
-            tx_bundle, _ = await self.make_transfer_nft_spend_bundle(nft_new_launcher_id, OFFER_MOD_HASH, each_fee)
+            offered_coins.append(nft_new_launcher_coin_record.coin)
+            tx_bundle, _ = await self.make_transfer_nft_spend_bundle(nft_new_launcher_id, OFFER_MOD_HASH)
             spend_bundles.append(tx_bundle)
 
         notarized_payments = Offer.notarize_payments(requested_payments, offered_coins)
 
-        spend_bundle: SpendBundle = SpendBundle.aggregate(spend_bundles)
+        spend_bundle = None
+        if len(spend_bundles) == 1:
+            spend_bundle = spend_bundles[0]
+        else:
+            spend_bundle = SpendBundle.aggregate(spend_bundles)
 
         offer: Offer = Offer(notarized_payments, spend_bundle, driver_dict)
         return offer
@@ -235,7 +236,7 @@ class Inferno:
         primaries.append(Payment(recipient_puzzlehash, 1, [recipient_puzzlehash]))
         innersol = Wallet().make_solution(
             primaries=primaries,
-            fee=fee
+            fee=fee,
         )
         
         if unft is not None:
@@ -264,8 +265,8 @@ class Inferno:
             singleton_solution = Program.to([lineage_proof.to_program(), 1, nft_layer_solution])
             coin_spend = CoinSpend(coin_record.coin, full_puzzle, singleton_solution)
 
-            nft_spend_bundle = await sign_coin_spends([coin_spend], wallet_keyf, 
-                                    self.get_synthetic_private_key_for_puzzle_hash, 
+            nft_spend_bundle = await sign_coin_spends([coin_spend], wallet_keyf,
+                                    self.get_synthetic_private_key_for_puzzle_hash,
                                     AGG_SIG_ME_ADDITIONAL_DATA, MAX_BLOCK_COST_CLVM, [puzzle_hash_for_synthetic_public_key])
 
             return nft_spend_bundle, inner_puzzle.get_tree_hash()
