@@ -6,6 +6,7 @@
 * Create a venv
   * `python3 -m venv venv`
   * `. venv/bin/activate`
+  * `pip install --upgrade chia-blockchain==2.1.1`
 * Create a blank directory to hold your offer files
   * `mkdir offers`
 * Run the utility to generate all the offers. Hint, DERIVATIONS is optional for small wallets (defaults to 1000)
