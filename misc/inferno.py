@@ -25,6 +25,7 @@ import sys
 from chia.consensus.default_constants import DEFAULT_CONSTANTS
 from chia.rpc.full_node_rpc_client import FullNodeRpcClient
 from chia.rpc.wallet_rpc_client import WalletRpcClient
+from chia.types.announcement import Announcement
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
@@ -131,6 +132,7 @@ class Inferno:
             requested_payments[nft_old_launcher_id] = [Payment(BURN_PUZZLEHASH, 1, [BURN_PUZZLEHASH])]
 
         offered_coins = []
+        nft_new_launcher_ids = []
         spend_bundles = []
 
         for nft_new_id in new_ids:
@@ -139,10 +141,19 @@ class Inferno:
             nft_new_launcher_coin_record: CoinRecord = await self.node_client.get_coin_record_by_name(nft_new_launcher_id)
             assert nft_new_launcher_coin_record is not None
             offered_coins.append(nft_new_launcher_coin_record.coin)
-            tx_bundle, _ = await self.make_transfer_nft_spend_bundle(nft_new_launcher_id, OFFER_MOD_HASH)
-            spend_bundles.append(tx_bundle)
+            nft_new_launcher_ids.append(nft_new_launcher_id)
 
-        notarized_payments = Offer.notarize_payments(requested_payments, offered_coins)
+        notarized_payments: Dict[bytes32 | None, List[NotarizedPayment]] = Offer.notarize_payments(requested_payments, offered_coins)
+        announcements_to_assert: List[Announcement] = Offer.calculate_announcements(notarized_payments, driver_dict)
+        announcements_to_assert_bytes = set()
+
+        for announcement in announcements_to_assert:
+            announcements_to_assert_bytes.add(announcement.name())
+
+        for i in range(len(offered_coins)):
+            nft_new_launcher_id = nft_new_launcher_ids[i]
+            tx_bundle, _ = await self.make_transfer_nft_spend_bundle(nft_new_launcher_id, OFFER_MOD_HASH, announcements_to_assert_bytes)
+            spend_bundles.append(tx_bundle)
 
         spend_bundle = None
         if len(spend_bundles) == 1:
@@ -211,7 +222,7 @@ class Inferno:
 
 
     # transfer an NFT, held by the wallet for this app, to a new destination
-    async def make_transfer_nft_spend_bundle(self, nft_launcher_id: bytes32, recipient_puzzlehash: bytes32, fee:int=0) -> Tuple[SpendBundle, bytes32]:
+    async def make_transfer_nft_spend_bundle(self, nft_launcher_id: bytes32, recipient_puzzlehash: bytes32, announcements_to_assert: List[Announcement], fee:int=0) -> Tuple[SpendBundle, bytes32]:
         logger.debug(f"Preparing spend bundle for transfer of NFT {encode_puzzle_hash(nft_launcher_id, 'nft')} to {encode_puzzle_hash(recipient_puzzlehash, PREFIX)}")
 
         nft_launcher_coin_record = await self.node_client.get_coin_record_by_name(nft_launcher_id)
@@ -237,6 +248,7 @@ class Inferno:
         innersol = Wallet().make_solution(
             primaries=primaries,
             fee=fee,
+            puzzle_announcements_to_assert=announcements_to_assert
         )
         
         if unft is not None:
