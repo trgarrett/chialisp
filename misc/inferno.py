@@ -205,7 +205,7 @@ class Inferno:
             assert info.royalty_percentage is not None
             driver_dict[id]["also"]["also"] = {
                 "type": "ownership",
-                "owner": "0x" + info.owner_did.hex() if info.owner_did is not None else "()",
+                "owner": "()",
                 "transfer_program": {
                     "type": "royalty transfer program",
                     "launcher_id": "0x" + info.launcher_id.hex(),
