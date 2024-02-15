@@ -54,7 +54,7 @@ from chia.wallet.sign_coin_spends import sign_coin_spends
 from chia.wallet.trading.offer import Offer, NotarizedPayment, OFFER_MOD_HASH
 from chia.wallet.wallet import Wallet
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 MAX_BLOCK_COST_CLVM = DEFAULT_CONSTANTS.MAX_BLOCK_COST_CLVM
 BURN_PUZZLEHASH = bytes32.from_hexstr("0x000000000000000000000000000000000000000000000000000000000000dead")
@@ -222,7 +222,7 @@ class Inferno:
 
 
     # transfer an NFT, held by the wallet for this app, to a new destination
-    async def make_transfer_nft_spend_bundle(self, nft_launcher_id: bytes32, recipient_puzzlehash: bytes32, announcements_to_assert: List[Announcement], fee:int=0) -> Tuple[SpendBundle, bytes32]:
+    async def make_transfer_nft_spend_bundle(self, nft_launcher_id: bytes32, recipient_puzzlehash: bytes32, announcements_to_assert: Set[bytes], fee:int=0) -> Tuple[SpendBundle, bytes32]:
         logger.debug(f"Preparing spend bundle for transfer of NFT {encode_puzzle_hash(nft_launcher_id, 'nft')} to {encode_puzzle_hash(recipient_puzzlehash, PREFIX)}")
 
         nft_launcher_coin_record = await self.node_client.get_coin_record_by_name(nft_launcher_id)
