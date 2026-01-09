@@ -29,6 +29,7 @@ from chia.wallet.cat_wallet.cat_utils import (
 )
 from chia.wallet.derive_keys import master_sk_to_wallet_sk, master_sk_to_wallet_sk_unhardened
 from chia.wallet.lineage_proof import LineageProof
+from chia.wallet.payment import Payment
 from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
     DEFAULT_HIDDEN_PUZZLE_HASH,
     calculate_synthetic_secret_key,
@@ -47,9 +48,7 @@ PREFIX = "xch"
 # TODO: Plug in some more CATs you care about here
 global CATS
 CATS = {
-    "USDS": "6d95dae356e32a71db5ddcb42224754a02524c615c5fc35f568c2af04774e589",
-    #"MZ": "b8edcc6a7cf3738a3806fdbadb1bbcfc2540ec37f6732ab3a6a4bbcd2dbec105",
-    #"DBX": "db1a9020d48d9d4ad22631b66ab4b9ebd3637ef7758ad38881348c5d24c38f20",
+    "wUSDC.b": "fa4a180ac326e67ea289b869e3448256f6af05721f7cf934cb9901baa6b7a99d",
 }
 
 # DERIVATIONS - how deep to look in the wallet
@@ -105,10 +104,15 @@ async def fix_unhinted_coins(address, hint_puzzlehash, actual_puzzlehash, cat_as
         await node_client.await_closed()
 
 
-async def migrate_coins(current_address, new_puzzlehash, current_actual_puzzlehash, cat_asset_id: str = None):  
+async def migrate_coins(current_address, new_puzzlehash, current_actual_puzzlehash, cat_asset_id: str = None, cat_puzzlehash: bytes32 = None):  
     try:
         node_client = await FullNodeRpcClient.create(self_hostname, uint16(full_node_rpc_port), DEFAULT_ROOT_PATH, config)
-        all_coins_by_hash = await node_client.get_coin_records_by_puzzle_hash(current_actual_puzzlehash, False, 0)
+
+        search_puzzlehash = current_actual_puzzlehash
+        if cat_puzzlehash is not None:
+            search_puzzlehash = cat_puzzlehash
+        all_coins_by_hash = await node_client.get_coin_records_by_puzzle_hash(search_puzzlehash, False, 0)
+
         sum_by_hash = 0
         for coin_record in all_coins_by_hash:
             sum_by_hash += int(coin_record.coin.amount)
@@ -117,20 +121,20 @@ async def migrate_coins(current_address, new_puzzlehash, current_actual_puzzleha
             print(f'Address: {current_address}.  Hash found {sum_by_hash}. Will migrate {len(all_coins_by_hash)} coins.')
 
         for coin_record in all_coins_by_hash:
-            await spend_coin(node_client, coin_record, new_puzzlehash, address_puzzlehash=current_actual_puzzlehash, cat_asset_id=cat_asset_id)
+            await spend_coin(node_client, coin_record, new_puzzlehash, address_puzzlehash=current_actual_puzzlehash, cat_asset_id=cat_asset_id, cat_puzzlehash=cat_puzzlehash)
 
     finally:
         node_client.close()
         await node_client.await_closed()
 
 
-async def spend_coin(node_client, coin_record: CoinRecord, hint_puzzlehash: bytes32, address_puzzlehash: bytes32 = None, cat_asset_id = None):
+async def spend_coin(node_client, coin_record: CoinRecord, hint_puzzlehash: bytes32, address_puzzlehash: bytes32 = None, cat_asset_id = None, cat_puzzlehash: bytes32 = None):
     print(f'spend_coin: {coin_record.coin.name().hex()}')
 
     if address_puzzlehash is None:
         address_puzzlehash = hint_puzzlehash
 
-    puzzle_reveal = puzzle_reveals[coin_record.coin.puzzle_hash]
+    puzzle_reveal = puzzle_reveals[address_puzzlehash]
 
     if puzzle_reveal is None:
         puzzle_reveal = puzzle_reveals[hint_puzzlehash]
@@ -139,22 +143,23 @@ async def spend_coin(node_client, coin_record: CoinRecord, hint_puzzlehash: byte
         print("WARNING: Checked all known keys for valid puzzle reveal. Failed to find any.")
     else:
         spend_bundle: SpendBundle = None
-        primaries = [{"puzzlehash": hint_puzzlehash, "amount": coin_record.coin.amount, "memos": [hint_puzzlehash]}]
+        primaries = [Payment(hint_puzzlehash, coin_record.coin.amount, [hint_puzzlehash])]
         inner_solution = wallet.make_solution(
             primaries=primaries
         )
         if cat_asset_id is not None:
-            spend_bundle = await calculate_cat_spend_bundle(coin_record, node_client, cat_asset_id, address_puzzlehash, puzzle_reveal, inner_solution)
-            spend_bundle = await sign_coin_spends(spend_bundle.coin_spends, wallet_keyf, AGG_SIG_ME_ADDITIONAL_DATA, MAX_BLOCK_COST_CLVM)
+            spend_bundle = await calculate_cat_spend_bundle(coin_record, node_client, cat_asset_id, cat_puzzlehash, puzzle_reveal, inner_solution)
+            spend_bundle = await sign_coin_spends(spend_bundle.coin_spends, wallet_keyf, None, AGG_SIG_ME_ADDITIONAL_DATA, MAX_BLOCK_COST_CLVM, [address_puzzlehash])
         else:
             coin_spend = CoinSpend(
                 coin_record.coin,
                 puzzle_reveal,
                 inner_solution
             )
-            spend_bundle = await sign_coin_spends([coin_spend], wallet_keyf, AGG_SIG_ME_ADDITIONAL_DATA, MAX_BLOCK_COST_CLVM)
+            spend_bundle = await sign_coin_spends([coin_spend], wallet_keyf, None, AGG_SIG_ME_ADDITIONAL_DATA, MAX_BLOCK_COST_CLVM, [address_puzzlehash])
 
-        await node_client.push_tx(spend_bundle)
+        result = await node_client.push_tx(spend_bundle)
+        print(result)
 
 
 async def calculate_cat_spend_bundle(coin_record: CoinRecord, node_client: FullNodeRpcClient, cat_asset_id: str, address_puzzlehash: bytes32, puzzle: Program, inner_solution: Program) -> SpendBundle:
@@ -175,8 +180,19 @@ async def calculate_cat_spend_bundle(coin_record: CoinRecord, node_client: FullN
     list_args = list(curried_args.as_iter())
     parent_inner_puzzlehash: bytes32 = list_args[-1].get_tree_hash()
     lineage_proof = LineageProof(parent_coin.parent_coin_info, parent_inner_puzzlehash, parent_coin.amount)
-    
+
+    assert coin is not None
+    assert cat_asset_id is not None
+    assert puzzle is not None
+    assert inner_solution is not None
+    assert lineage_proof is not None
+    print('here6')
+
     spendable_cat = SpendableCAT(coin, bytes.fromhex(cat_asset_id), puzzle, inner_solution, Program.to([]), lineage_proof, 0)
+    assert spendable_cat is not None
+    print ('here9')
+
+    print(f'spendable_cat: {spendable_cat}')
 
     spend_bundle = unsigned_spend_bundle_for_spendable_cats(CAT_MOD, [spendable_cat])
     #print(f'spend_bundle: {spend_bundle}')
@@ -262,7 +278,7 @@ async def main():
                 await fix_unhinted_coins(cat_address, raw_puzzlehash, cat_puzzlehash, asset_id)
             else:
                 new_hint_puzzlehash = decode_puzzle_hash(new_xch_address)
-                await migrate_coins(address, new_hint_puzzlehash, puzzlehash)
+                await migrate_coins(address, new_hint_puzzlehash, raw_puzzlehash, asset_id, cat_puzzlehash=cat_puzzlehash)
 
 
 
